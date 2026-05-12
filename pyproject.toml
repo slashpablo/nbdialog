@@ -37,6 +37,6 @@ nbdialog = "nbdialog._modidx:d"
 version = {attr = "nbdialog.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["nbdialog"]
+include = ["nbdialog", "nbdialog.*"]
 
 [tool.nbdev]

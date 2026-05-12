@@ -51,8 +51,8 @@ $ pip install nbdialog
 
 Documentation can be found hosted on this GitHub
 [repository](https://github.com/slashpablo/nbdialog)’s
-[pages](https://slashpablo.github.io/nbdialog/). Additionally you can find
-package manager specific guidelines on
+[pages](https://slashpablo.github.io/nbdialog/). Additionally you can
+find package manager specific guidelines on
 [conda](https://anaconda.org/slashpablo/nbdialog) and
 [pypi](https://pypi.org/project/nbdialog/) respectively.
 
