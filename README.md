@@ -58,10 +58,36 @@ find package manager specific guidelines on
 
 ## How to use
 
-Fill me in please! Don’t forget code examples:
+`nbdialog` adds a `%%prompt` cell magic that turns a Jupyter notebook
+into an LLM dialog. When you run a prompt cell, every cell above it —
+code, markdown, and captured outputs — is sent to the model as
+conversation history; previous prompt cells appear as prior assistant
+turns. The reply renders as markdown and is cached in the cell’s
+outputs, so re-running the notebook doesn’t re-call the model.
+
+Register a provider once per kernel:
 
 ``` python
-1+1
+from nbdialog.core import *
+from nbdialog.providers.azure import AzureProvider
+
+set_provider(AzureProvider())
 ```
 
-    2
+Then write a prompt in any cell — the rest of the notebook above it
+becomes the context:
+
+    %%prompt
+    write me hello world in python, like a pirate!
+
+Run the cell to see the model’s response rendered as markdown.
+Subsequent runs reuse the cached output; pass `-f` to force a fresh
+call:
+
+    %%prompt -f
+    which is better?
+
+`AzureProvider` ships with the package. To use a different vendor,
+implement the `Provider` protocol — any object with a
+`complete(messages: list[dict]) -> str` method works — and pass it to
+`set_provider`.
