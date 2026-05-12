@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nbdialog"
+dynamic = ["version"]
+description = ""
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "slashpablo", email = "contact@slashpablo.com"}]
+keywords = ['nbdev']
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "azure-ai-inference>=1.0.0b9",
+    "azure-core>=1.41.0",
+    "azure-identity>=1.25.3",
+    "github-copilot-sdk>=0.1.25",
+    "ipykernel>=7.2.0",
+    "jupyterlab>=4.5.7",
+    "nbdev>=3.0.15",
+    "openai>=2.36.0",
+]
+
+[project.urls]
+Repository = "https://github.com/slashpablo/nbdialog"
+Documentation = "https://slashpablo.github.io/nbdialog/"
+
+[project.entry-points.nbdev]
+nbdialog = "nbdialog._modidx:d"
+
+[tool.setuptools.dynamic]
+version = {attr = "nbdialog.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["nbdialog"]
+
+[tool.nbdev]

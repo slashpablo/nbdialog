@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "nbdialog"
+  site-url: "https://slashpablo.github.io/nbdialog"
+  description: ""
+  repo-branch: main
+  repo-url: "https://github.com/slashpablo/nbdialog"
