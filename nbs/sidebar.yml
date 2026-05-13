@@ -1,0 +1,9 @@
+website:
+  sidebar:
+    contents:
+      - index.ipynb
+      - 00_core.ipynb
+      - 01_providers.openai.ipynb
+      - 02_tools.search.ipynb
+      - 03_tools.browse.ipynb
+      - 99_small_demo.ipynb

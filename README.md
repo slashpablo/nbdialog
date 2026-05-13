@@ -69,9 +69,9 @@ Register a provider once per kernel:
 
 ``` python
 from nbdialog.core import *
-from nbdialog.providers.azure import AzureProvider
+from nbdialog.providers.openai import OpenAIProvider
 
-set_provider(AzureProvider())
+set_provider(OpenAIProvider())
 ```
 
 Then write a prompt in any cell — the rest of the notebook above it
@@ -87,7 +87,7 @@ call:
     %%prompt -f
     which is better?
 
-`AzureProvider` ships with the package. To use a different vendor,
+`OpenAIProvider` ships with the package. To use a different vendor,
 implement the `Provider` protocol — any object with a
 `complete(messages: list[dict]) -> str` method works — and pass it to
 `set_provider`.
