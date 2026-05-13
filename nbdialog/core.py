@@ -4,7 +4,7 @@
 
 # %% auto #0
 __all__ = ['system_prompt', 'notebook_to_messages', 'Provider', 'Tool', 'set_provider', 'get_provider', 'set_tools', 'get_tools',
-           'prompt']
+           'Trace', 'prompt']
 
 # %% ../nbs/00_core.ipynb #a456f188
 from IPython.display import Markdown, display
@@ -82,8 +82,8 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class Provider(Protocol):
-    "A vendor-agnostic chat-completion contract: messages in, text out."
-    def complete(self, messages: list[dict], tools: list = None) -> str: ...
+    "A vendor-agnostic chat-completion contract: messages in, text out, plus optional tools and trace."
+    def complete(self, messages: list[dict], tools: list = None, trace: "Trace | None" = None) -> str: ...
 
 # %% ../nbs/00_core.ipynb #e815ac8c
 from typing import NamedTuple, Callable
@@ -116,15 +116,115 @@ def get_tools() -> list[Tool]:
     "Return the currently registered tools."
     return _tools
 
+# %% ../nbs/00_core.ipynb #trace-code
+import html, time
+
+_TRACE_CSS = """<style>
+.nbd-trace { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; margin: 0.5em 0; }
+.nbd-trace > summary { cursor: pointer; user-select: none; padding: 4px 8px; background: rgba(127,127,127,0.10); border-radius: 4px; }
+.nbd-trace .nbd-turn { padding: 6px 10px; border-left: 2px solid rgba(127,127,127,0.3); margin: 6px 0 6px 12px; }
+.nbd-trace .nbd-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 6px; vertical-align: 1px; }
+.nbd-trace .nbd-badge-prompt { background: rgba(127,127,127,0.20); color: inherit; }
+.nbd-trace .nbd-badge-model  { background: rgba(64,128,255,0.18);  color: #4080ff; }
+.nbd-trace .nbd-badge-tool   { background: rgba(255,165,0,0.20);   color: #d67a00; }
+.nbd-trace .nbd-meta { color: rgba(127,127,127,0.85); font-size: 11px; }
+.nbd-trace pre { background: rgba(127,127,127,0.08); padding: 6px 8px; border-radius: 3px; white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 11px; }
+.nbd-trace details { margin: 4px 0; }
+.nbd-trace details > summary { cursor: pointer; user-select: none; }
+</style>"""
+
+class Trace:
+    "Records the immediate loop (prompt, model turns, tool calls). Renders as a collapsible HTML block."
+    def __init__(self):
+        self.prompt: str = ""
+        self.turns: list[dict] = []
+        self._t0 = time.perf_counter()
+        self._tokens = 0
+
+    def set_prompt(self, text: str) -> None: self.prompt = text
+
+    def add_model_turn(self, content, tool_calls, usage, dt):
+        self.turns.append({"kind": "model", "content": content,
+                           "tool_calls": list(tool_calls or []),
+                           "usage": usage, "dt": dt})
+        if usage: self._tokens += usage.get("total_tokens") or 0
+
+    def add_tool_turn(self, name, args, result, dt):
+        self.turns.append({"kind": "tool", "name": name, "args": args,
+                           "result": result, "dt": dt})
+
+    @property
+    def total_dt(self): return time.perf_counter() - self._t0
+
+    def _repr_html_(self): return _render_trace_html(self)
+
+def _render_trace_html(trace: "Trace") -> str:
+    "Render a `Trace` as a collapsible HTML disclosure block."
+    e = html.escape
+    n_model = sum(1 for t in trace.turns if t["kind"] == "model")
+    n_tool  = sum(1 for t in trace.turns if t["kind"] == "tool")
+    header_bits = [f"{n_model} model turn" + ("s" if n_model != 1 else ""),
+                   f"{n_tool} tool call" + ("s" if n_tool != 1 else ""),
+                   f"{trace.total_dt:.1f}s"]
+    if trace._tokens: header_bits.append(f"{trace._tokens:,} tokens")
+    summary = "trace · " + " · ".join(header_bits)
+
+    parts = [_TRACE_CSS, f'<details class="nbd-trace"><summary>{e(summary)}</summary>']
+    if trace.prompt:
+        parts.append('<div class="nbd-turn">'
+                     '<span class="nbd-badge nbd-badge-prompt">prompt</span>'
+                     f'<pre>{e(trace.prompt)}</pre></div>')
+    for i, t in enumerate(trace.turns):
+        if t["kind"] == "model":
+            usage = t.get("usage") or {}
+            meta = f'turn {i+1} · {t["dt"]:.2f}s'
+            if usage.get("total_tokens"): meta += f' · {usage["total_tokens"]:,} tokens'
+            body = []
+            for tc in t["tool_calls"]:
+                args_json = json.dumps(tc["args"], indent=2, ensure_ascii=False)
+                body.append(f'<details><summary>calls <code>{e(tc["name"])}</code></summary>'
+                            f'<pre>{e(args_json)}</pre></details>')
+            if t["content"]:
+                body.append(f'<pre>{e(t["content"])}</pre>')
+            if not body: body = ['<span class="nbd-meta">(no content; loop exiting)</span>']
+            parts.append('<div class="nbd-turn">'
+                         '<span class="nbd-badge nbd-badge-model">model</span>'
+                         f'<span class="nbd-meta">{e(meta)}</span>'
+                         + "".join(body) + '</div>')
+        else:
+            args_inline = ", ".join(f'{k}={json.dumps(v, ensure_ascii=False)}'
+                                    for k, v in t["args"].items())
+            meta = f'{t["name"]}({args_inline}) · {t["dt"]:.2f}s · {len(t["result"]):,} chars'
+            parts.append('<div class="nbd-turn">'
+                         '<span class="nbd-badge nbd-badge-tool">tool</span>'
+                         f'<span class="nbd-meta">{e(meta)}</span>'
+                         f'<details><summary>result</summary>'
+                         f'<pre>{e(t["result"])}</pre></details></div>')
+    parts.append('</details>')
+    return "".join(parts)
+
 # %% ../nbs/00_core.ipynb #5ac6d750
 def _parse_prompt_args(line):
-    "Parse the magic line, e.g. `%%prompt -f`."
+    "Parse the magic line, e.g. `%%prompt -f --trace`."
     p = argparse.ArgumentParser(prog="%%prompt", add_help=False)
     p.add_argument("-f", "--force", action="store_true",
                    help="bypass cache and call the model even if this cell has output")
+    p.add_argument("--trace", action="store_true",
+                   help="render the model/tool loop alongside the final answer")
     return p.parse_args(shlex.split(line or ""))
 
 # %% ../nbs/00_core.ipynb #09148757
+from IPython.display import HTML
+
+def _cached_trace_html(cell):
+    "Return the persisted trace HTML stored in a cell's outputs, or None."
+    for o in cell.get("outputs", []):
+        h = o.get("data", {}).get("text/html")
+        if h:
+            s = _join(h)
+            if "nbd-trace" in s: return s
+    return None
+
 @register_cell_magic
 def prompt(line, cell):
     "Send the notebook-so-far to the LLM and render its reply as markdown."
@@ -141,8 +241,15 @@ def prompt(line, cell):
     if not args.force and current:
         cached = _response_markdown(current)
         if cached:
+            if args.trace:
+                cached_trace = _cached_trace_html(current)
+                if cached_trace: display(HTML(cached_trace))
             display(Markdown(cached))
             return
 
+    trace = Trace() if args.trace else None
+    if trace is not None: trace.set_prompt(cell)
     messages = notebook_to_messages(cells, up_to_id=cell_id)
-    display(Markdown(get_provider().complete(messages, tools=get_tools() or None)))
+    answer = get_provider().complete(messages, tools=get_tools() or None, trace=trace)
+    if trace is not None: display(trace)
+    display(Markdown(answer))

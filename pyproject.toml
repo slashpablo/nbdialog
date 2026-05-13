@@ -42,3 +42,8 @@ version = {attr = "nbdialog.__version__"}
 include = ["nbdialog", "nbdialog.*"]
 
 [tool.nbdev]
+
+[dependency-groups]
+dev = [
+    "nbdime>=4.0.4",
+]

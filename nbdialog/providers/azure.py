@@ -4,12 +4,12 @@
 __all__ = ['AzureProvider']
 
 # %% ../../nbs/01_providers.azure.ipynb #182df542
-import json, os
+import json, os, time
 from openai import AzureOpenAI
-from ..core import Tool
+from ..core import Tool, Trace
 
 class AzureProvider:
-    "OpenAI chat completions via an Azure deployment, with a tool-call loop."
+    "OpenAI chat completions via an Azure deployment, with a tool-call loop and optional Trace recording."
     def __init__(self,
                  deployment: str = "gpt-5.4",
                  endpoint: str = "https://pablo-ml1b1csr-eastus2.cognitiveservices.azure.com",
@@ -30,20 +30,35 @@ class AzureProvider:
                                        api_version=self.api_version)
         return self._client
 
-    def complete(self, messages: list[dict], tools: list[Tool] = None) -> str:
+    def complete(self, messages: list[dict], tools: list[Tool] = None,
+                 trace: Trace = None) -> str:
         tools = tools or []
         schemas = [t.schema for t in tools]
         dispatch = {t.schema["function"]["name"]: t.fn for t in tools}
         msgs = list(messages)
         for _ in range(self.max_tool_steps):
             kw = {"tools": schemas} if schemas else {}
+            t0 = time.perf_counter()
             resp = self._get_client().chat.completions.create(
                 model=self.deployment, messages=msgs,
                 max_completion_tokens=self.max_completion_tokens, **kw)
+            dt = time.perf_counter() - t0
             m = resp.choices[0].message
+            if trace is not None:
+                tc_for_trace = [{"name": tc.function.name,
+                                 "args": json.loads(tc.function.arguments)}
+                                for tc in (m.tool_calls or [])]
+                usage = resp.usage.model_dump() if resp.usage else None
+                trace.add_model_turn(m.content, tc_for_trace, usage, dt)
             if not m.tool_calls: return m.content
             msgs.append(m.model_dump(exclude_none=True))
             for tc in m.tool_calls:
-                out = dispatch[tc.function.name](**json.loads(tc.function.arguments))
-                msgs.append({"role": "tool", "tool_call_id": tc.id, "content": str(out)})
+                args = json.loads(tc.function.arguments)
+                t0 = time.perf_counter()
+                out = dispatch[tc.function.name](**args)
+                dt = time.perf_counter() - t0
+                if trace is not None:
+                    trace.add_tool_turn(tc.function.name, args, str(out), dt)
+                msgs.append({"role": "tool", "tool_call_id": tc.id,
+                             "content": str(out)})
         raise RuntimeError(f"Tool loop did not converge in {self.max_tool_steps} steps")
