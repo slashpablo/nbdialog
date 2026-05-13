@@ -11,13 +11,14 @@ from ..core import Tool, Trace
 class AzureProvider:
     "OpenAI chat completions via an Azure deployment, with a tool-call loop and optional Trace recording."
     def __init__(self,
-                 deployment: str = "gpt-5.4",
-                 endpoint: str = "https://pablo-ml1b1csr-eastus2.cognitiveservices.azure.com",
+                 deployment: str | None = None,
+                 endpoint: str | None = None,
                  api_version: str = "2024-12-01-preview",
                  api_key_env: str = "AZURE_API_KEY",
                  max_completion_tokens: int = 16384,
                  max_tool_steps: int = 8):
-        self.deployment, self.endpoint = deployment, endpoint
+        self.deployment = deployment or os.environ.get("AZURE_OPENAI_DEPLOYMENT")
+        self.endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT")
         self.api_version, self.api_key_env = api_version, api_key_env
         self.max_completion_tokens = max_completion_tokens
         self.max_tool_steps = max_tool_steps
@@ -25,6 +26,10 @@ class AzureProvider:
 
     def _get_client(self):
         if self._client is None:
+            if not self.endpoint:
+                raise RuntimeError("AzureProvider: no endpoint. Set $AZURE_OPENAI_ENDPOINT or pass endpoint=...")
+            if not self.deployment:
+                raise RuntimeError("AzureProvider: no deployment. Set $AZURE_OPENAI_DEPLOYMENT or pass deployment=...")
             self._client = AzureOpenAI(api_key=os.environ[self.api_key_env],
                                        azure_endpoint=self.endpoint,
                                        api_version=self.api_version)
