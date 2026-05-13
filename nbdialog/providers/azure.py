@@ -4,20 +4,23 @@
 __all__ = ['AzureProvider']
 
 # %% ../../nbs/01_providers.azure.ipynb #182df542
-import os
+import json, os
 from openai import AzureOpenAI
+from ..core import Tool
 
 class AzureProvider:
-    "OpenAI chat completions via an Azure deployment."
+    "OpenAI chat completions via an Azure deployment, with a tool-call loop."
     def __init__(self,
                  deployment: str = "gpt-5.4",
                  endpoint: str = "https://pablo-ml1b1csr-eastus2.cognitiveservices.azure.com",
                  api_version: str = "2024-12-01-preview",
                  api_key_env: str = "AZURE_API_KEY",
-                 max_completion_tokens: int = 16384):
+                 max_completion_tokens: int = 16384,
+                 max_tool_steps: int = 8):
         self.deployment, self.endpoint = deployment, endpoint
         self.api_version, self.api_key_env = api_version, api_key_env
         self.max_completion_tokens = max_completion_tokens
+        self.max_tool_steps = max_tool_steps
         self._client = None
 
     def _get_client(self):
@@ -27,9 +30,20 @@ class AzureProvider:
                                        api_version=self.api_version)
         return self._client
 
-    def complete(self, messages: list[dict]) -> str:
-        resp = self._get_client().chat.completions.create(
-            model=self.deployment, messages=messages,
-            max_completion_tokens=self.max_completion_tokens,
-        )
-        return resp.choices[0].message.content
+    def complete(self, messages: list[dict], tools: list[Tool] = None) -> str:
+        tools = tools or []
+        schemas = [t.schema for t in tools]
+        dispatch = {t.schema["function"]["name"]: t.fn for t in tools}
+        msgs = list(messages)
+        for _ in range(self.max_tool_steps):
+            kw = {"tools": schemas} if schemas else {}
+            resp = self._get_client().chat.completions.create(
+                model=self.deployment, messages=msgs,
+                max_completion_tokens=self.max_completion_tokens, **kw)
+            m = resp.choices[0].message
+            if not m.tool_calls: return m.content
+            msgs.append(m.model_dump(exclude_none=True))
+            for tc in m.tool_calls:
+                out = dispatch[tc.function.name](**json.loads(tc.function.arguments))
+                msgs.append({"role": "tool", "tool_call_id": tc.id, "content": str(out)})
+        raise RuntimeError(f"Tool loop did not converge in {self.max_tool_steps} steps")

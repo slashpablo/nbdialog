@@ -24,6 +24,8 @@ dependencies = [
     "jupyterlab>=4.5.7",
     "nbdev>=3.0.15",
     "openai>=2.36.0",
+    "httpx>=0.27.0",
+    "trafilatura>=1.12.0",
 ]
 
 [project.urls]
