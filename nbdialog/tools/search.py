@@ -29,6 +29,7 @@ def _brave_search(query: str, k: int = 5, api_key_env: str = "BRAVE_API_KEY") ->
         for x in results
     )
 
+# %% ../../nbs/02_tools.search.ipynb #search-tool
 web_search = Tool(
     schema={
         "type": "function",

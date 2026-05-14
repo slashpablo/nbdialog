@@ -6,7 +6,7 @@
 __all__ = ['system_prompt', 'notebook_to_messages', 'ToolCall', 'Turn', 'Provider', 'Tool', 'set_provider', 'get_provider',
            'set_tools', 'get_tools', 'Trace', 'run_completion', 'prompt']
 
-# %% ../nbs/00_core.ipynb #a456f188
+# %% ../nbs/00_core.ipynb #f42e371a-3724-4b5c-8f28-b675c2f8e074
 from IPython.display import Markdown, display
 from IPython.core.magic import register_cell_magic
 

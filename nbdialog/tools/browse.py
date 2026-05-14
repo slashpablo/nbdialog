@@ -20,6 +20,7 @@ def _browse(url: str, max_chars: int = 10000) -> str:
         return extracted[:max_chars] + f"\n\n…(truncated; original {len(extracted)} chars — call again with a higher `max_chars` to read more)"
     return extracted
 
+# %% ../../nbs/03_tools.browse.ipynb #browse-tool
 browse = Tool(
     schema={
         "type": "function",
