@@ -1,0 +1,212 @@
+[
+  {
+    "objectID": "core.html",
+    "href": "core.html",
+    "title": "core",
+    "section": "",
+    "text": "Convention for the rest of this notebook: each exported function is followed by a bare-call cell whose rendered output doubles as its working example. Deeper invariants live in adjacent #| hide cells.",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#imports",
+    "href": "core.html#imports",
+    "title": "core",
+    "section": "Imports",
+    "text": "Imports",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#foundational-observations",
+    "href": "core.html#foundational-observations",
+    "title": "core",
+    "section": "Foundational observations",
+    "text": "Foundational observations\nAn .ipynb is just JSON. Cells have sources, outputs, and (since nbformat 4.5) stable ids.\n\nnotebook_content = Path(\"99_small_demo.ipynb\").read_text()\nprint(notebook_content[:250] + \"...\")\n\n{\n \"cells\": [\n  {\n   \"cell_type\": \"markdown\",\n   \"id\": \"6e33fbe2-4020-4c95-9d09-3be966a130aa\",\n   \"metadata\": {},\n   \"source\": [\n    \"# Small demo\\n\",\n    \"&gt; Small test subject used to understand and test notebook internals\\n\",\n    \"- skip_exec: true...\n\n\nCell outputs persist in the JSON on disk, so they double as a cache.\n\nnotebook_json = json.loads(notebook_content)\ncell = notebook_json[\"cells\"][3]\ncell\n\n{'cell_type': 'code',\n 'execution_count': None,\n 'id': '16d185be-4b09-4387-bf19-be8b03ccf817',\n 'metadata': {},\n 'outputs': [{'name': 'stdout',\n   'output_type': 'stream',\n   'text': ['Hello matey!\\n']}],\n 'source': ['def hello():\\n', '    print(\"Hello matey!\")\\n', '\\n', 'hello()']}\n\n\nJupyterLab tells the kernel which cell is executing via parent_header.metadata.cellId. That’s enough to locate ourselves in the notebook without text matching.\n\nip = get_ipython()\nip.parent_header[\"metadata\"][\"cellId\"]\n\n'4e577b75-e6e8-4ca8-ae26-cacb869d4636'",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#system-prompt",
+    "href": "core.html#system-prompt",
+    "title": "core",
+    "section": "System prompt",
+    "text": "System prompt\nKept short and honest about the actual environment. The model takes its tone, structure, and capabilities cues from here, so lies about features we don’t have (tool use, variable injection, etc.) leak into responses.",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#locating-the-current-notebook",
+    "href": "core.html#locating-the-current-notebook",
+    "title": "core",
+    "section": "Locating the current notebook",
+    "text": "Locating the current notebook\nTwo-step strategy. JupyterLab ≥ 3.5 sets JPY_SESSION_NAME to the notebook’s path; use it to determine the current notebook’s path.\n\n_current_notebook()\n\nPath('/Users/pablo/src/nbdialog/nbs/00_core.ipynb')",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#cells-chat-messages",
+    "href": "core.html#cells-chat-messages",
+    "title": "core",
+    "section": "Cells → chat messages",
+    "text": "Cells → chat messages\nPrompt cells contribute one user message (the prompt body with the %%prompt line stripped) and, when they already have rendered output, one assistant message replaying that output. Code and markdown cells contribute their source as user, plus any captured outputs as a follow-up user message. The cell whose id matches up_to_id is the boundary — included for its prompt but never for its (stale) cached response, since that response is what the current call is producing.\n\n_join([\"hello\\n\", \"world\"])\n\n'hello\\nworld'\n\n\n\n_is_prompt({\"cell_type\": \"code\", \"source\": \"%%prompt\\nhi\"}), _is_prompt({\"cell_type\": \"code\", \"source\": \"x = 1\"})\n\n(True, False)\n\n\n\n_strip_magic(\"%%prompt -f\\nhello\\nworld\")\n\n'hello\\nworld'\n\n\n\n_output_text({\"output_type\": \"stream\", \"text\": \"hi\\n\"}), _response_markdown({\"outputs\": [{\"data\": {\"text/markdown\": \"**reply**\"}}]})\n\n('hi\\n', '**reply**')\n\n\n\nsource\n\nnotebook_to_messages\n\ndef notebook_to_messages(\n    cells, up_to_id, system:NoneType=None\n):\n\nBuild chat messages from cells up to and including the cell with id up_to_id.\n\ndemo = [{\"id\": \"a\", \"cell_type\": \"code\", \"source\": \"x = 1\", \"outputs\": []},\n        {\"id\": \"b\", \"cell_type\": \"code\", \"source\": \"%%prompt\\nwhat is x?\", \"outputs\": []}]\nnotebook_to_messages(demo, \"b\")\n\n[{'role': 'system',\n  'content': 'You are an AI assistant embedded inside an IPython notebook through a `%%prompt` cell magic. The notebook is a linear sequence of markdown, code, and prompt cells executed in a single persistent kernel — state from code cells carries forward. When the user runs a prompt cell, every cell above it (sources and captured outputs) is sent to you as the conversation history; previous prompt cells appear as your prior assistant turns. The dialog *is* the notebook.\\n\\nBe concise, direct, and incremental. Match response length to the question. Do not pad, restate, or end with \"let me know if...\". Use fenced code blocks with language tags. Default to idiomatic Python — comprehensions, broadcasting, fastcore-style brevity. Short single-line docstrings; no inline comments unless a constraint is genuinely non-obvious.\\n\\nYour knowledge cutoff is January 2026.'},\n {'role': 'user', 'content': 'x = 1'},\n {'role': 'user', 'content': 'what is x?'}]\n\n\nSanity check on the demo notebook:\n\ndemo = json.loads(Path(\"99_small_demo.ipynb\").read_text())[\"cells\"]\nlast = demo[-1][\"id\"]\n[(m[\"role\"], m[\"content\"][:60]) for m in notebook_to_messages(demo, last)]\n\n[('system', 'You are an AI assistant embedded inside an IPython notebook '),\n ('user', '# Small demo\\n&gt; Small test subject used to understand and tes'),\n ('user', 'from nbdialog.core import *\\nfrom nbdialog.providers.openai i'),\n ('user', 'write me hello world in python, like a pirate!'),\n ('assistant', '```python\\nprint(\"Ahoy, world!\")\\n```'),\n ('user', 'def hello():\\n    print(\"Hello matey!\")\\n\\nhello()'),\n ('user', '# Output:\\nHello matey!\\n'),\n ('user', 'which is better?'),\n ('assistant',\n  'Yours is better for the brief.\\n\\n```python\\ndef hello():\\n    p'),\n ('user', 'Give me top 5 news about bitcoin as of May 12 2026')]",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#providers-tools",
+    "href": "core.html#providers-tools",
+    "title": "core",
+    "section": "Providers & tools",
+    "text": "Providers & tools\nThe magic doesn’t know or care which vendor answers the prompt — it only needs a Provider: an object whose complete(messages, tools=None) returns a parsed Turn. We encode that as a typing.Protocol so a provider can be any duck-typed object the user happens to have, without inheriting from anything in this package.\nA provider is intentionally a single round-trip primitive — translate one model call. The tool-dispatch loop (call model → run tools → re-call) lives in run_completion below, so it isn’t duplicated per provider. Provider docs say the wire format is OpenAI Chat Completions; second-vendor providers translate at their own boundary.\nTools are paired (schema, function) values: an OpenAI-shaped JSON tool envelope plus the Python implementation. We deliberately keep the schema explicit and hand-written for now — generating it from type hints/docstrings is a nice future addition, not a hard requirement.\nBoth registries are module-level singletons because a notebook kernel is a single global session — there is nothing for a context manager or thread-local to scope. Users register both once at the top of their notebook:\nfrom nbdialog.providers.openai import OpenAIProvider\nfrom nbdialog.tools.search import web_search\nset_provider(OpenAIProvider())\nset_tools([web_search])\n\nsource\n\nProvider\n\ndef Provider(\n    args:VAR_POSITIONAL, kwargs:VAR_KEYWORD\n):\n\nVendor adapter: messages in (OpenAI chat-completions format), parsed Turn out. The tool-call loop lives in run_completion, not here — providers translate one round-trip and nothing else.\n\nsource\n\n\nTurn\n\ndef Turn(\n    args:VAR_POSITIONAL, kwargs:VAR_KEYWORD\n):\n\nOne round-trip result from a Provider. Carries everything a caller or loop needs — text, parsed tool calls, usage, and the model’s finish_reason so callers can detect truncation (length) or refusals without re-parsing the raw response.\n\nsource\n\n\nToolCall\n\ndef ToolCall(\n    args:VAR_POSITIONAL, kwargs:VAR_KEYWORD\n):\n\nA parsed tool invocation from one model turn.\n\nsource\n\n\nget_tools\n\ndef get_tools(\n    \n)-&gt;list:\n\nReturn the currently registered tools.\n\nsource\n\n\nset_tools\n\ndef set_tools(\n    tools:list\n)-&gt;None:\n\nRegister the Tools available on every %%prompt.\n\nsource\n\n\nget_provider\n\ndef get_provider(\n    \n)-&gt;Provider:\n\nReturn the active provider, or raise with the fix in the message.\n\nsource\n\n\nset_provider\n\ndef set_provider(\n    p:Provider\n)-&gt;None:\n\nRegister p as the provider the %%prompt magic will call.\n\nsource\n\n\nTool\n\ndef Tool(\n    args:VAR_POSITIONAL, kwargs:VAR_KEYWORD\n):\n\nA schema/function pair the model can call. schema is an OpenAI-shaped tool envelope.",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#tracing-the-immediate-loop",
+    "href": "core.html#tracing-the-immediate-loop",
+    "title": "core",
+    "section": "Tracing the immediate loop",
+    "text": "Tracing the immediate loop\nOpt-in transparency for %%prompt. A Trace records just the loop that produces the answer — the user’s prompt, each model turn, each tool call/result, timings, and token usage. It deliberately excludes the system prompt and the notebook history that got built into messages; those don’t change between runs of a given cell, and the interesting story is what the model did with them.\nRendering is a single collapsible disclosure block, designed to live in the cell’s stored outputs so it persists across notebook saves. Because we return HTML via _repr_html_, the Jupyter save flow handles persistence for us — the same mechanism that already caches the markdown answer.\n\nsource\n\nTrace\n\ndef Trace(\n    \n):\n\nRecords the immediate loop (prompt, model turns, tool calls). Renders as a collapsible HTML block.",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#the-tool-call-loop",
+    "href": "core.html#the-tool-call-loop",
+    "title": "core",
+    "section": "The tool-call loop",
+    "text": "The tool-call loop\nrun_completion drives a Provider until it produces a final answer. The provider returns one parsed Turn per call; if that turn has tool calls, we append the assistant message (with its tool_calls) and one role: \"tool\" message per dispatched result, then call the provider again. max_tool_steps bounds the loop in case the model gets stuck in a tool-calling loop.\nPulled out of any individual provider because the loop is vendor-agnostic — every chat-completion provider that supports tools repeats the same dance. Keeping it here means a new provider only translates one round-trip; it doesn’t re-implement dispatch.\n\nsource\n\nrun_completion\n\ndef run_completion(\n    provider:Provider, messages:list, tools:list=None, trace:Trace=None, max_tool_steps:int=8\n)-&gt;Turn:\n\nDrive provider in a tool-call loop and return the final answering Turn.",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "core.html#the-prompt-magic",
+    "href": "core.html#the-prompt-magic",
+    "title": "core",
+    "section": "The %%prompt magic",
+    "text": "The %%prompt magic\nWhen the user runs a %%prompt cell we parse the magic line, read this cell’s id from parent_header.metadata.cellId, and either replay the cached output (if one exists and --force wasn’t passed) or build the message list from the notebook so far and call the model. The cache lives in the .ipynb itself — outputs persist through Jupyter’s normal save flow, which is the whole point.\n\n_parse_prompt_args(\"-f --trace\")\n\nNamespace(force=True, trace=True)\n\n\n\nsource\n\nprompt\n\ndef prompt(\n    line, cell\n):\n\nSend the notebook-so-far to the LLM and render its reply as markdown.",
+    "crumbs": [
+      "core"
+    ]
+  },
+  {
+    "objectID": "tools.search.html",
+    "href": "tools.search.html",
+    "title": "tools.search",
+    "section": "",
+    "text": "Brave’s REST API returns a JSON document; we keep only the top k web results and collapse each into a short title / url / description block. That gives the model enough to decide whether to follow up (potentially with another tool, like a future fetch_url) without spending tokens on Brave’s auxiliary fields.\nThe schema is hand-written for now. Auto-generating it from the function’s signature is a fine future move, but writing it explicitly here keeps the dependency surface tiny and makes the contract obvious to a reader of the file.\n\nweb_search.schema['function']['name'], list(web_search.schema['function']['parameters']['properties'])\n\n('web_search', ['query', 'k'])\n\n\nSmoke test — only runs when the key is present, so doc builds without credentials stay green:\n\nif os.environ.get(\"BRAVE_API_KEY\"):\n    print(_brave_search(\"nbdev fastai\", k=2)[:400])\n\n## nbdev – Create delightful software with Jupyter Notebooks ...\nhttps://nbdev.fast.ai/\nWrite, test, document, and distribute software packages and technical articles — all in one place, your notebook.\n\n## End-To-End Walkthrough - nbdev - Fast.ai\nhttps://nbdev.fast.ai/tutorial.html\nWrite, test, document, and distribute software packages and technical articles — all in one place, your notebook.",
+    "crumbs": [
+      "tools.search"
+    ]
+  },
+  {
+    "objectID": "tools.search.html#the-tool",
+    "href": "tools.search.html#the-tool",
+    "title": "tools.search",
+    "section": "",
+    "text": "Brave’s REST API returns a JSON document; we keep only the top k web results and collapse each into a short title / url / description block. That gives the model enough to decide whether to follow up (potentially with another tool, like a future fetch_url) without spending tokens on Brave’s auxiliary fields.\nThe schema is hand-written for now. Auto-generating it from the function’s signature is a fine future move, but writing it explicitly here keeps the dependency surface tiny and makes the contract obvious to a reader of the file.\n\nweb_search.schema['function']['name'], list(web_search.schema['function']['parameters']['properties'])\n\n('web_search', ['query', 'k'])\n\n\nSmoke test — only runs when the key is present, so doc builds without credentials stay green:\n\nif os.environ.get(\"BRAVE_API_KEY\"):\n    print(_brave_search(\"nbdev fastai\", k=2)[:400])\n\n## nbdev – Create delightful software with Jupyter Notebooks ...\nhttps://nbdev.fast.ai/\nWrite, test, document, and distribute software packages and technical articles — all in one place, your notebook.\n\n## End-To-End Walkthrough - nbdev - Fast.ai\nhttps://nbdev.fast.ai/tutorial.html\nWrite, test, document, and distribute software packages and technical articles — all in one place, your notebook.",
+    "crumbs": [
+      "tools.search"
+    ]
+  },
+  {
+    "objectID": "providers.openai.html",
+    "href": "providers.openai.html",
+    "title": "providers.openai",
+    "section": "",
+    "text": "complete() is a single round-trip: translate one OpenAI Chat Completions response into a Turn. The tool-dispatch loop lives in nbdialog.core.run_completion, not here — every chat-completion provider that supports tools would otherwise re-implement the same dance.\nConstruction is cheap and side-effect-free; credentials and config are resolved lazily inside _get_client. Endpoint and deployment have no defaults — set them via env or pass explicitly:\n# option 1: env vars (recommended)\n# export AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com\n# export AZURE_OPENAI_DEPLOYMENT=your-deployment-name\n# export AZURE_API_KEY=...\nset_provider(OpenAIProvider())\n\n# option 2: explicit\nset_provider(OpenAIProvider(endpoint=\"https://...\", deployment=\"gpt-5.4\"))\n\nsource\n\n\n\ndef OpenAIProvider(\n    deployment:str | None=None, endpoint:str | None=None, api_version:str='2024-12-01-preview',\n    api_key_env:str='AZURE_API_KEY', max_completion_tokens:int=16384\n):\n\nOpenAI Chat Completions over the openai SDK. complete() is one round-trip — driven by run_completion when tools are involved.\n\np = OpenAIProvider(endpoint=\"https://demo\", deployment=\"gpt-5.4\")\np.deployment, p._client  # client is lazy — None until the first complete()\n\n('gpt-5.4', None)\n\n\nSmoke test — only runs when credentials are present, so the doc build stays green without them.\n\nif all(os.environ.get(k) for k in (\"AZURE_API_KEY\", \"AZURE_OPENAI_ENDPOINT\", \"AZURE_OPENAI_DEPLOYMENT\")):\n    print(OpenAIProvider().complete([{\"role\":\"user\",\"content\":\"ping\"}]))\n\nTurn(text='pong', tool_calls=[], usage={'completion_tokens': 5, 'prompt_tokens': 7, 'total_tokens': 12, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}, 'latency_checkpoint': {'engine_tbt_ms': 16, 'engine_ttft_ms': 99, 'engine_ttlt_ms': 180, 'pre_inference_ms': 130, 'service_tbt_ms': 17, 'service_ttft_ms': 299, 'service_ttlt_ms': 374, 'total_duration_ms': 254, 'user_visible_ttft_ms': 169}}, finish_reason='stop')",
+    "crumbs": [
+      "providers.openai"
+    ]
+  },
+  {
+    "objectID": "providers.openai.html#the-provider",
+    "href": "providers.openai.html#the-provider",
+    "title": "providers.openai",
+    "section": "",
+    "text": "complete() is a single round-trip: translate one OpenAI Chat Completions response into a Turn. The tool-dispatch loop lives in nbdialog.core.run_completion, not here — every chat-completion provider that supports tools would otherwise re-implement the same dance.\nConstruction is cheap and side-effect-free; credentials and config are resolved lazily inside _get_client. Endpoint and deployment have no defaults — set them via env or pass explicitly:\n# option 1: env vars (recommended)\n# export AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com\n# export AZURE_OPENAI_DEPLOYMENT=your-deployment-name\n# export AZURE_API_KEY=...\nset_provider(OpenAIProvider())\n\n# option 2: explicit\nset_provider(OpenAIProvider(endpoint=\"https://...\", deployment=\"gpt-5.4\"))\n\nsource\n\n\n\ndef OpenAIProvider(\n    deployment:str | None=None, endpoint:str | None=None, api_version:str='2024-12-01-preview',\n    api_key_env:str='AZURE_API_KEY', max_completion_tokens:int=16384\n):\n\nOpenAI Chat Completions over the openai SDK. complete() is one round-trip — driven by run_completion when tools are involved.\n\np = OpenAIProvider(endpoint=\"https://demo\", deployment=\"gpt-5.4\")\np.deployment, p._client  # client is lazy — None until the first complete()\n\n('gpt-5.4', None)\n\n\nSmoke test — only runs when credentials are present, so the doc build stays green without them.\n\nif all(os.environ.get(k) for k in (\"AZURE_API_KEY\", \"AZURE_OPENAI_ENDPOINT\", \"AZURE_OPENAI_DEPLOYMENT\")):\n    print(OpenAIProvider().complete([{\"role\":\"user\",\"content\":\"ping\"}]))\n\nTurn(text='pong', tool_calls=[], usage={'completion_tokens': 5, 'prompt_tokens': 7, 'total_tokens': 12, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}, 'latency_checkpoint': {'engine_tbt_ms': 16, 'engine_ttft_ms': 99, 'engine_ttlt_ms': 180, 'pre_inference_ms': 130, 'service_tbt_ms': 17, 'service_ttft_ms': 299, 'service_ttlt_ms': 374, 'total_duration_ms': 254, 'user_visible_ttft_ms': 169}}, finish_reason='stop')",
+    "crumbs": [
+      "providers.openai"
+    ]
+  },
+  {
+    "objectID": "tools.browse.html",
+    "href": "tools.browse.html",
+    "title": "tools.browse",
+    "section": "",
+    "text": "trafilatura handles both fetch and readable-content extraction in a single library. It strips boilerplate (nav, ads, footers), preserves headings/lists/code/tables, and outputs markdown — which is exactly the shape we want to feed back to the model.\nTruncation is on by default. Pages are unpredictably large; a paywall warning is fine to lose, a 200KB longform article would otherwise blow context budget unannounced. We surface the truncation explicitly so the model knows there’s more if it needs to call again with a higher max_chars.\nWe deliberately catch fetch/extract failures and return them as readable strings rather than raising. That keeps the tool loop alive — the model sees the error, can recover (try a different URL, fall back to search snippets), and the user still gets a final answer.\nThe Tool pairs that function with the schema the model sees — the description is what tells it to reach for browse after a web_search result looks worth reading in full.\n\nbrowse.schema['function']['name'], list(browse.schema['function']['parameters']['properties'])\n\n('browse', ['url', 'max_chars'])\n\n\nSmoke test — works offline-free if the network is reachable:\n\nprint(_browse(\"https://example.com\", max_chars=400))\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\nLearn more",
+    "crumbs": [
+      "tools.browse"
+    ]
+  },
+  {
+    "objectID": "tools.browse.html#the-tool",
+    "href": "tools.browse.html#the-tool",
+    "title": "tools.browse",
+    "section": "",
+    "text": "trafilatura handles both fetch and readable-content extraction in a single library. It strips boilerplate (nav, ads, footers), preserves headings/lists/code/tables, and outputs markdown — which is exactly the shape we want to feed back to the model.\nTruncation is on by default. Pages are unpredictably large; a paywall warning is fine to lose, a 200KB longform article would otherwise blow context budget unannounced. We surface the truncation explicitly so the model knows there’s more if it needs to call again with a higher max_chars.\nWe deliberately catch fetch/extract failures and return them as readable strings rather than raising. That keeps the tool loop alive — the model sees the error, can recover (try a different URL, fall back to search snippets), and the user still gets a final answer.\nThe Tool pairs that function with the schema the model sees — the description is what tells it to reach for browse after a web_search result looks worth reading in full.\n\nbrowse.schema['function']['name'], list(browse.schema['function']['parameters']['properties'])\n\n('browse', ['url', 'max_chars'])\n\n\nSmoke test — works offline-free if the network is reachable:\n\nprint(_browse(\"https://example.com\", max_chars=400))\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\nLearn more",
+    "crumbs": [
+      "tools.browse"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "nbdialog",
+    "section": "",
+    "text": "This file will become your README and also the index of your documentation.",
+    "crumbs": [
+      "nbdialog"
+    ]
+  },
+  {
+    "objectID": "index.html#developer-guide",
+    "href": "index.html#developer-guide",
+    "title": "nbdialog",
+    "section": "Developer Guide",
+    "text": "Developer Guide\nIf you are new to using nbdev here are some useful pointers to get you started.\n\nInstall nbdialog in Development mode\n# make sure nbdialog package is installed in development mode\n$ pip install -e .\n\n# make changes under nbs/ directory\n# ...\n\n# compile to have changes apply to nbdialog\n$ nbdev_prepare",
+    "crumbs": [
+      "nbdialog"
+    ]
+  },
+  {
+    "objectID": "index.html#usage",
+    "href": "index.html#usage",
+    "title": "nbdialog",
+    "section": "Usage",
+    "text": "Usage\n\nInstallation\nInstall latest from the GitHub repository:\n$ pip install git+https://github.com/slashpablo/nbdialog.git\nor from conda\n$ conda install -c slashpablo nbdialog\nor from pypi\n$ pip install nbdialog\n\n\nDocumentation\nDocumentation can be found hosted on this GitHub repository’s pages. Additionally you can find package manager specific guidelines on conda and pypi respectively.",
+    "crumbs": [
+      "nbdialog"
+    ]
+  },
+  {
+    "objectID": "index.html#how-to-use",
+    "href": "index.html#how-to-use",
+    "title": "nbdialog",
+    "section": "How to use",
+    "text": "How to use\nnbdialog adds a %%prompt cell magic that turns a Jupyter notebook into an LLM dialog. When you run a prompt cell, every cell above it — code, markdown, and captured outputs — is sent to the model as conversation history; previous prompt cells appear as prior assistant turns. The reply renders as markdown and is cached in the cell’s outputs, so re-running the notebook doesn’t re-call the model.\nRegister a provider once per kernel:\n\nfrom nbdialog.core import *\nfrom nbdialog.providers.openai import OpenAIProvider\n\nset_provider(OpenAIProvider())\n\nThen write a prompt in any cell — the rest of the notebook above it becomes the context:\n%%prompt\nwrite me hello world in python, like a pirate!\nRun the cell to see the model’s response rendered as markdown. Subsequent runs reuse the cached output; pass -f to force a fresh call:\n%%prompt -f\nwhich is better?\nOpenAIProvider ships with the package. To use a different vendor, implement the Provider protocol — any object with a complete(messages: list[dict]) -&gt; str method works — and pass it to set_provider.",
+    "crumbs": [
+      "nbdialog"
+    ]
+  },
+  {
+    "objectID": "small_demo.html",
+    "href": "small_demo.html",
+    "title": "Small demo",
+    "section": "",
+    "text": "from nbdialog.core import *\nfrom nbdialog.providers.openai import OpenAIProvider\nfrom nbdialog.tools import search, browse\nset_provider(OpenAIProvider())\nset_tools([search.web_search, browse.browse])\n\n\nwrite me hello world in python, like a pirate!\n\nprint(\"Ahoy, world!\")\n\n\n\ndef hello():\n    print(\"Hello matey!\")\n\nhello()\n\nHello matey!\n\n\n\nwhich is better?\n\nYours is better for the brief.\ndef hello():\n    print(\"Hello matey!\")\n\nhello()\nWhy: - it’s actually pirate-flavored - it’s wrapped in a function, so it’s reusable - it already runs and matches the notebook context\nIf you want the most minimal pirate version:\nprint(\"Ahoy, world!\")\n\n\n\nGive me top 5 news about bitcoin as of May 12 2026",
+    "crumbs": [
+      "Small demo"
+    ]
+  }
+]
